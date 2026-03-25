@@ -1,0 +1,42 @@
+device: serial:/dev/septentrio_gps_g5_p3h
+
+serial:
+  baudrate: 115200
+  hw_flow_control: "off"
+
+configure_rx: true
+activate_debug_log: true
+receiver_type: gnss
+multi_antenna: true   # enabled for heading
+
+frame_id: gnss
+imu_frame_id: imu
+poi_frame_id: base_link
+vehicle_frame_id: base_link
+local_frame_id: odom
+
+insert_local_frame: false
+get_spatial_config_from_tf: false
+lock_utm_zone: true
+use_ros_axis_orientation: true
+
+datum: Default
+
+polling_period:
+  pvt: 100
+  rest: 500
+
+use_gnss_time: false
+ntp_server: false
+ptp_server_clock: false
+latency_compensation: false
+
+publish:
+  auto_publish: true
+  publish_only_valid: false
+  navsatfix: true
+  pvtgeodetic: true
+  poscovgeodetic: true
+  atteuler: true
+  attcoveuler: true
+  diagnostics: true
