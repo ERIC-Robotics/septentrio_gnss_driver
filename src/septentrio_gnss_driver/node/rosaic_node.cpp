@@ -41,7 +41,20 @@ namespace rosaic_node {
      */
 
     ROSaicNode::ROSaicNode(const rclcpp::NodeOptions& options) :
-        ROSaicNodeBase(options), IO_(this), tfBuffer_(this->get_clock())
+        ROSaicNodeBase(options), tfBuffer_(this->get_clock())
+    {
+        this->log(log_level::DEBUG,
+                  "Lifecycle node constructed. Waiting for configure transition.");
+    }
+
+    ROSaicNode::~ROSaicNode()
+    {
+        stopIo();
+        stopSetupThread();
+    }
+
+    ROSaicNode::CallbackReturn
+    ROSaicNode::on_configure(const rclcpp_lifecycle::State&)
     {
         param("activate_debug_log", settings_.activate_debug_log, false);
         if (settings_.activate_debug_log)
@@ -56,30 +69,90 @@ namespace rosaic_node {
             }
         }
 
-        this->log(log_level::DEBUG, "Called ROSaicNode() constructor..");
-
         tfListener_ = std::make_unique<tf2_ros::TransformListener>(tfBuffer_);
 
-        // Parameters must be set before initializing IO
         if (!getROSParams())
-            return;
+        {
+            this->log(log_level::ERROR,
+                      "Configuration failed while loading ROS parameters.");
+            return CallbackReturn::FAILURE;
+        }
 
-        setupThread_ = std::thread(std::bind(&ROSaicNode::setup, this));
-
-        this->log(log_level::DEBUG, "Leaving ROSaicNode() constructor..");
+        IO_ = std::make_unique<io::CommunicationCore>(this);
+        this->log(log_level::INFO, "Configuration complete.");
+        return CallbackReturn::SUCCESS;
     }
 
-    ROSaicNode::~ROSaicNode()
+    ROSaicNode::CallbackReturn ROSaicNode::on_activate(const rclcpp_lifecycle::State&)
     {
-        IO_.close();
-        if (setupThread_.joinable())
-            setupThread_.join();
+        if (!IO_)
+        {
+            this->log(log_level::ERROR,
+                      "Activation requested before successful configuration.");
+            return CallbackReturn::FAILURE;
+        }
+
+        activatePublishers();
+        stopSetupThread();
+        setupThread_ = std::thread(std::bind(&ROSaicNode::setup, this));
+        this->log(log_level::INFO, "Node activated.");
+        return CallbackReturn::SUCCESS;
+    }
+
+    ROSaicNode::CallbackReturn
+    ROSaicNode::on_deactivate(const rclcpp_lifecycle::State&)
+    {
+        stopIo();
+        stopSetupThread();
+        deactivatePublishers();
+        this->log(log_level::INFO, "Node deactivated.");
+        return CallbackReturn::SUCCESS;
+    }
+
+    ROSaicNode::CallbackReturn ROSaicNode::on_cleanup(const rclcpp_lifecycle::State&)
+    {
+        stopIo();
+        stopSetupThread();
+        clearPublishers();
+        clearSubscribers();
+        IO_.reset();
+        tfListener_.reset();
+        this->log(log_level::INFO, "Node cleaned up.");
+        return CallbackReturn::SUCCESS;
+    }
+
+    ROSaicNode::CallbackReturn
+    ROSaicNode::on_shutdown(const rclcpp_lifecycle::State&)
+    {
+        stopIo();
+        stopSetupThread();
+        return CallbackReturn::SUCCESS;
+    }
+
+    ROSaicNode::CallbackReturn ROSaicNode::on_error(const rclcpp_lifecycle::State&)
+    {
+        stopIo();
+        stopSetupThread();
+        return CallbackReturn::SUCCESS;
     }
 
     void ROSaicNode::setup()
     {
         // Initializes Connection
-        IO_.connect();
+        if (IO_)
+            IO_->connect();
+    }
+
+    void ROSaicNode::stopIo()
+    {
+        if (IO_)
+            IO_->close();
+    }
+
+    void ROSaicNode::stopSetupThread()
+    {
+        if (setupThread_.joinable())
+            setupThread_.join();
     }
 
     [[nodiscard]] bool ROSaicNode::getROSParams()
@@ -824,7 +897,8 @@ namespace rosaic_node {
 
     void ROSaicNode::sendVelocity(const std::string& velNmea)
     {
-        IO_.sendVelocity(velNmea);
+        if (IO_)
+            IO_->sendVelocity(velNmea);
     }
 } // namespace rosaic_node
 

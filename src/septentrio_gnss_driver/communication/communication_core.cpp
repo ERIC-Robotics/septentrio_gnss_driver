@@ -84,6 +84,9 @@ namespace io {
     {
         telegramHandler_.clearSemaphores();
 
+        if (!manager_)
+            return;
+
         resetSettings();
 
         manager_->close();
@@ -91,6 +94,9 @@ namespace io {
 
     void CommunicationCore::resetSettings()
     {
+        if (!manager_)
+            return;
+
         if (!manager_->connected())
         {
             return;

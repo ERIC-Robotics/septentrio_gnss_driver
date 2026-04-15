@@ -1,6 +1,6 @@
 import os
 import launch
-from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode, Node
 from launch_ros.actions import ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
 from launch.actions import DeclareLaunchArgument
@@ -47,10 +47,11 @@ def generate_launch_description():
     arg_file_path = DeclareLaunchArgument(name_arg_file_path,
                                           default_value=[get_package_share_directory('septentrio_gnss_driver'), '/config/', LaunchConfiguration(name_arg_file_name)])
 
-    node = Node(
+    node = LifecycleNode(
             package='septentrio_gnss_driver',
             executable='septentrio_gnss_driver_node',
             name='septentrio_gnss_driver',
+            namespace='',
             emulate_tty=True,
             sigterm_timeout = '20',
             parameters=[LaunchConfiguration(name_arg_file_path)])

@@ -151,6 +151,7 @@ elseif(ament_cmake_FOUND)
   # Dependencies
   find_package(ament_cmake REQUIRED)
   find_package(rclcpp REQUIRED)
+  find_package(rclcpp_lifecycle REQUIRED)
   find_package(rclcpp_components REQUIRED)
   find_package(rosidl_default_generators REQUIRED)
   find_package(diagnostic_msgs REQUIRED)
@@ -202,6 +203,7 @@ elseif(ament_cmake_FOUND)
 
   set(dependencies
     rclcpp
+    rclcpp_lifecycle
     rclcpp_components
     diagnostic_msgs
     nmea_msgs
@@ -247,6 +249,7 @@ elseif(ament_cmake_FOUND)
     ${nmea_msgs_TARGETS}
     ${sensor_msgs_TARGETS}
     rclcpp::rclcpp
+    rclcpp_lifecycle::rclcpp_lifecycle
     rclcpp_components::component
     rclcpp_components::component_manager
     sensor_msgs::sensor_msgs_library
@@ -314,4 +317,3 @@ elseif(ament_cmake_FOUND)
 else()
   message(FATAL_ERROR "Build failed because neither catkin nor ament found.")
 endif()
-

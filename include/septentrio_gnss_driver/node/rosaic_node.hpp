@@ -69,6 +69,7 @@
 #include <tf2_ros/transform_listener.h>
 // ROSaic includes
 #include <septentrio_gnss_driver/communication/communication_core.hpp>
+#include <rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp>
 
 /**
  * @namespace rosaic_node
@@ -83,6 +84,9 @@ namespace rosaic_node {
     class ROSaicNode : public ROSaicNodeBase
     {
     public:
+        using CallbackReturn =
+            rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
         //! The constructor initializes and runs the ROSaic node, if everything works
         //! fine. It loads the user-defined ROS parameters, subscribes to Rx
         //! messages, and publishes requested ROS messages...
@@ -91,7 +95,16 @@ namespace rosaic_node {
         ~ROSaicNode();
 
     private:
+        CallbackReturn on_configure(const rclcpp_lifecycle::State& state) override;
+        CallbackReturn on_activate(const rclcpp_lifecycle::State& state) override;
+        CallbackReturn on_deactivate(const rclcpp_lifecycle::State& state) override;
+        CallbackReturn on_cleanup(const rclcpp_lifecycle::State& state) override;
+        CallbackReturn on_shutdown(const rclcpp_lifecycle::State& state) override;
+        CallbackReturn on_error(const rclcpp_lifecycle::State& state) override;
+
         void setup();
+        void stopIo();
+        void stopSetupThread();
         /**
          * @brief Gets the node parameters from the ROS Parameter Server, parts of
          * which are specified in a YAML file
@@ -128,7 +141,7 @@ namespace rosaic_node {
         void sendVelocity(const std::string& velNmea);
 
         //! Handles communication with the Rx
-        io::CommunicationCore IO_;
+        std::unique_ptr<io::CommunicationCore> IO_;
         //! tf2 buffer and listener
         tf2_ros::Buffer tfBuffer_;
         std::unique_ptr<tf2_ros::TransformListener> tfListener_;

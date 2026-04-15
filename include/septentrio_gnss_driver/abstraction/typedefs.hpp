@@ -32,11 +32,15 @@
 
 // std includes
 #include <any>
+#include <functional>
 #include <iomanip>
 #include <sstream>
 #include <unordered_map>
 // ROS includes
+#include <lifecycle_msgs/msg/state.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
+#include <rclcpp_lifecycle/lifecycle_publisher.hpp>
 // tf2 includes
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
@@ -189,11 +193,11 @@ namespace log_level {
  * @class ROSaicNodeBase
  * @brief This class is the base class for abstraction
  */
-class ROSaicNodeBase : public rclcpp::Node
+class ROSaicNodeBase : public rclcpp_lifecycle::LifecycleNode
 {
 public:
     ROSaicNodeBase(const rclcpp::NodeOptions& options) :
-        Node("septentrio_gnss", options), tf2Publisher_(this),
+        LifecycleNode("septentrio_gnss", options), tf2Publisher_(this),
         tfBuffer_(this->get_clock()), tfListener_(tfBuffer_)
     {
     }
@@ -203,6 +207,36 @@ public:
     bool ok() { return rclcpp::ok(); }
 
     const Settings* settings() const { return &settings_; }
+
+    bool isLifecycleActive()
+    {
+        return this->get_current_state().id() ==
+               lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE;
+    }
+
+    void activatePublishers()
+    {
+        for (auto& entry : topicMap_)
+            entry.second.activate();
+    }
+
+    void deactivatePublishers()
+    {
+        for (auto& entry : topicMap_)
+            entry.second.deactivate();
+    }
+
+    void clearPublishers()
+    {
+        topicMap_.clear();
+        lastTfStamp_ = 0;
+    }
+
+    void clearSubscribers()
+    {
+        odometrySubscriber_.reset();
+        twistSubscriber_.reset();
+    }
 
     void registerSubscriber()
     {
@@ -347,6 +381,9 @@ public:
     template <typename M>
     void publishMessage(const std::string& topic, const M& msg)
     {
+        if (!isLifecycleActive())
+            return;
+
         if constexpr (has_block_header<M>::value)
         {
             if (settings_.publish_only_valid && !validValue(msg.block_header.tow))
@@ -356,19 +393,34 @@ public:
         auto it = topicMap_.find(topic);
         if (it != topicMap_.end())
         {
-            typename rclcpp::Publisher<M>::SharedPtr ptr =
-                std::any_cast<typename rclcpp::Publisher<M>::SharedPtr>(it->second);
-            ptr->publish(msg);
+            typename rclcpp_lifecycle::LifecyclePublisher<M>::SharedPtr ptr =
+                std::any_cast<typename rclcpp_lifecycle::LifecyclePublisher<M>::SharedPtr>(
+                    it->second.publisher);
+            if (ptr->is_activated())
+                ptr->publish(msg);
         } else
         {
             if (this->ok())
             {
-                typename rclcpp::Publisher<M>::SharedPtr pub =
+                typename rclcpp_lifecycle::LifecyclePublisher<M>::SharedPtr pub =
                     this->create_publisher<M>(
                         topic, rclcpp::QoS(rclcpp::KeepLast(queueSize_))
                                    .durability_volatile()
                                    .reliable());
-                topicMap_.insert(std::make_pair(topic, pub));
+
+                TopicPublisher entry;
+                entry.publisher = pub;
+                entry.activate = [pub]() {
+                    if (!pub->is_activated())
+                        pub->on_activate();
+                };
+                entry.deactivate = [pub]() {
+                    if (pub->is_activated())
+                        pub->on_deactivate();
+                };
+                it = topicMap_.insert(std::make_pair(topic, std::move(entry))).first;
+
+                it->second.activate();
                 pub->publish(msg);
             }
         }
@@ -380,6 +432,9 @@ public:
      */
     void publishTf(const LocalizationMsg& loc)
     {
+        if (!isLifecycleActive())
+            return;
+
         if (std::isnan(loc.pose.pose.orientation.w))
             return;
 
@@ -476,6 +531,13 @@ public:
     bool hasImprovedVsmHandling() { return capabilities_.has_improved_vsm_handling; }
 
 private:
+    struct TopicPublisher
+    {
+        std::any publisher;
+        std::function<void()> activate;
+        std::function<void()> deactivate;
+    };
+
     void callbackOdometry(const nav_msgs::msg::Odometry::ConstSharedPtr odo)
     {
         Timestamp stamp = timestampFromRos(odo->header.stamp);
@@ -618,7 +680,7 @@ protected:
 
 private:
     //! Map of topics and publishers
-    std::unordered_map<std::string, std::any> topicMap_;
+    std::unordered_map<std::string, TopicPublisher> topicMap_;
     //! Publisher queue size
     uint32_t queueSize_ = 1;
     //! Transform publisher
